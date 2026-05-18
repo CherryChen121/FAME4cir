@@ -10,9 +10,18 @@ from mmf.models.fashionvil.base import FashionViLBaseModel
 from mmf.utils.configuration import get_mmf_cache_dir
 from torch import Tensor
 from transformers import BertTokenizer
-from transformers.generation_beam_search import BeamSearchScorer
-from transformers.modeling_bert import BertForPreTraining
-from transformers.pytorch_utils import torch_int_div
+try:
+    from transformers.generation_beam_search import BeamSearchScorer
+except ModuleNotFoundError:
+    from transformers import BeamSearchScorer
+try:
+    from transformers.modeling_bert import BertForPreTraining
+except ModuleNotFoundError:
+    from transformers import BertForPreTraining
+try:
+    from transformers.pytorch_utils import torch_int_div
+except (ModuleNotFoundError, ImportError):
+    from torch import floor_divide as torch_int_div
 
 
 class FashionViLForCaptioning(FashionViLBaseModel):

@@ -1,11 +1,11 @@
 dataset_config:
-  fashioniq:
+  idrid:
     processors:
       text_processor:
         type: clip_tokenizer
         params:
           tokenizer_config:
-            type: openai/clip-vit-base-patch16
+            type: /data0/qrchen/projects/FAME-ViL/pretrained_models/clip-vit-base-patch16
             params: {}
       train_image_processor:
         type: torchvision_transforms

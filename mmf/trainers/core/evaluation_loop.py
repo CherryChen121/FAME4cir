@@ -6,7 +6,14 @@ from typing import Any, Dict, Tuple, Type
 
 import torch
 import tqdm
-from caffe2.python.timeout_guard import CompleteInTimeOrDie
+try:
+    from caffe2.python.timeout_guard import CompleteInTimeOrDie
+except ImportError:
+    from contextlib import contextmanager
+
+    @contextmanager
+    def CompleteInTimeOrDie(*args, **kwargs):
+        yield
 from mmf.common.meter import Meter
 from mmf.common.report import Report
 from mmf.common.sample import to_device

@@ -64,6 +64,22 @@ def patch_transformers(log_incompatible=False):
             sys.modules[f"transformers.{module}"] = importlib.import_module(
                 f"transformers.models.{key}.{module}"
             )
+
+    # Patch additional modules that were moved/renamed in newer transformers
+    _extra_modules = {
+        "transformers.generation_beam_search": "transformers.generation.beam_search",
+        "transformers.generation_utils": "transformers.generation.utils",
+        "transformers.pytorch_utils": "transformers.pytorch_utils",
+        "transformers.modeling_utils": "transformers.modeling_utils",
+        "transformers.modeling_outputs": "transformers.modeling_outputs",
+    }
+    for target, source in _extra_modules.items():
+        if target not in sys.modules:
+            try:
+                sys.modules[target] = importlib.import_module(source)
+            except (ImportError, ModuleNotFoundError):
+                pass
+
     sys.path = [sys.path[-1]] + sys.path[:-1]
 
 

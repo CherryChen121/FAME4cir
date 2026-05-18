@@ -1,11 +1,35 @@
 dataset_config:
-  fashioniq:
+  idrid:
+    data_dir: ${oc.env:MMF_DATA_DIR, data}/datasets
+    use_images: true
+    use_features: false
+    images:
+      train:
+      - IDRiD_CIR_Dataset_cold/images
+      val:
+      - IDRiD_CIR_Dataset_cold/images
+      test:
+      - IDRiD_CIR_Dataset_cold/images
+    annotations:
+      train:
+      - IDRiD_CIR_Dataset_cold/captions
+      val:
+      - IDRiD_CIR_Dataset_cold/captions
+      test:
+      - IDRiD_CIR_Dataset_cold/captions
+    features:
+      train:
+      - IDRiD_CIR_Dataset_cold/features
+      val:
+      - IDRiD_CIR_Dataset_cold/features
+      test:
+      - IDRiD_CIR_Dataset_cold/features
     processors:
       text_processor:
         type: clip_tokenizer
         params:
           tokenizer_config:
-            type: openai/clip-vit-base-patch16
+            type: /data0/qrchen/projects/FAME-ViL/pretrained_models/clip-vit-base-patch16
             params: {}
       train_image_processor:
         type: torchvision_transforms
@@ -37,3 +61,4 @@ dataset_config:
               params:
                 mean: [0.48145466, 0.4578275, 0.40821073]
                 std: [0.26862954, 0.26130258, 0.27577711]
+    return_features_info: false

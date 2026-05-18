@@ -11,8 +11,14 @@ from mmf.modules.losses import (
 )
 from torch import Tensor, nn
 from transformers import CLIPTokenizer
-from transformers.generation_beam_search import BeamSearchScorer
-from transformers.pytorch_utils import torch_int_div
+try:
+    from transformers.generation_beam_search import BeamSearchScorer
+except ModuleNotFoundError:
+    from transformers import BeamSearchScorer
+try:
+    from transformers.pytorch_utils import torch_int_div
+except (ModuleNotFoundError, ImportError):
+    from torch import floor_divide as torch_int_div
 
 from .base import FashionCLIPBaseModel
 
@@ -369,14 +375,14 @@ class FashionCLIPForMTL(FashionCLIPBaseModel):
     def _forward(self, sample_list: Dict[str, Tensor]) -> Dict[str, Tensor]:
         if sample_list.dataset_name == "fashiongen":
             output_dict = self._forward_itc(sample_list)
-        elif sample_list.dataset_name == "fashioniq":
+        elif sample_list.dataset_name in ("fashioniq", "idrid"):
             output_dict = self._forward_tgir(sample_list)
         elif sample_list.dataset_name == "fashiongen_cls":
             output_dict = self._forward_scr(sample_list)
         elif sample_list.dataset_name == "fashiongen_cap":
             output_dict = self._forward_cap(sample_list)
         else:
-            raise NotImplementedError
+            raise NotImplementedError(f"Unknown dataset: {sample_list.dataset_name}")
         return output_dict
 
     def check_dim(self, sample_list: Dict[str, Tensor]) -> Dict[str, Tensor]:

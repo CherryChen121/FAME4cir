@@ -51,6 +51,7 @@ from typing import Dict
 import evaluate
 import numpy as np
 import torch
+import torch.nn.functional as F
 from mmf.common.registry import registry
 from mmf.datasets.processors.processors import EvalAIAnswerProcessor
 from mmf.utils.distributed import (
@@ -1665,19 +1666,7 @@ class RecallAtK_ocir(BaseMetric):
 
         tar_embeddings = tar_embeddings[unique_idx]
         g_ids = target_ids[unique_idx]
-
-        q_cls = target_class[~fake_data]
-        g_cls = target_class[unique_idx]
-
-        return self._get_rk(
-            q_ids.cpu(),
-            g_ids.cpu(),
-            comp_embeddings.cpu(),
-            tar_embeddings.cpu(),
-            q_cls.cpu(),
-            g_cls.cpu(),
-            k,
-        )
+        return self._get_rk(q_ids, g_ids, comp_embeddings, tar_embeddings, k)
 
     def calculate(
         self,
@@ -2097,3 +2086,84 @@ class DetectionMeanAP(BaseMetric):
         if execute_on_master_only:
             mAP = broadcast_tensor(mAP, src=0)
         return mAP
+
+
+@registry.register_metric("r@k_idrid")
+class RecallAtK_idrid(BaseMetric):
+    """
+    Recall@k metric for IDRiD CIR dataset.
+    Similar to r@k_fashioniq but without garment class distinction.
+    """
+
+    def __init__(self, name="recall@k_idrid"):
+        super().__init__(name)
+        self.required_params = [
+            "comp_feats",
+            "tar_feats",
+            "target_id",
+        ]
+
+    def _get_recall_at_k(
+        self,
+        comp_embeddings: Tensor,
+        tar_embeddings: Tensor,
+        target_ids: Tensor,
+        k: int,
+    ) -> float:
+        """
+        计算 R@K，与 CLIP4Cir 完全一致的逻辑:
+        1. L2 归一化特征
+        2. 计算余弦相似度
+        3. 对每个 query，在 gallery 中找 top-K
+        4. R@K = 在 top-K 中命中目标的 query 数 / 总 query 数 * 100
+        """
+        # 归一化特征（余弦相似度）
+        comp_embeddings = F.normalize(comp_embeddings.float(), dim=-1)
+        tar_embeddings = F.normalize(tar_embeddings.float(), dim=-1)
+
+        # 去重 gallery：每个 target_id 只保留一个
+        _, unique_idx = np.unique(target_ids.cpu().numpy(), return_index=True)
+        unique_idx = torch.tensor(unique_idx, device=comp_embeddings.device)
+        gallery_features = tar_embeddings[unique_idx]
+        gallery_ids = target_ids[unique_idx]
+
+        # 计算余弦相似度并取 top-K
+        similarity = comp_embeddings @ gallery_features.T  # [N_query, N_gallery]
+        _, topk_indices = torch.topk(similarity, k=k, dim=1, largest=True, sorted=True)
+
+        # 获取 top-K 对应的 gallery id
+        topk_ids = gallery_ids[topk_indices]  # [N_query, K]
+
+        # 检查每个 query 的 target_id 是否在 top-K 中
+        matches = topk_ids.eq(target_ids.view(-1, 1))  # [N_query, K]
+        hit = matches.any(dim=1).float()  # [N_query]
+
+        # R@K = 命中数 / 总数 * 100
+        recall = hit.mean().item() * 100
+        return recall
+
+    def calculate(
+        self,
+        sample_list: Dict[str, Tensor],
+        model_output: Dict[str, Tensor],
+        *args,
+        **kwargs,
+    ):
+        comp_embeddings = model_output["comp_feats"]
+        tar_embeddings = model_output["tar_feats"]
+        target_ids = sample_list["target_id"]
+
+        # 跨 GPU 聚合
+        comp_embeddings = torch.cat(all_gather_diff_size(comp_embeddings), dim=0)
+        tar_embeddings = torch.cat(all_gather_diff_size(tar_embeddings), dim=0)
+        target_ids = torch.cat(all_gather_diff_size(target_ids), dim=0)
+
+        r1 = self._get_recall_at_k(comp_embeddings, tar_embeddings, target_ids, 1)
+        r5 = self._get_recall_at_k(comp_embeddings, tar_embeddings, target_ids, 5)
+        r10 = self._get_recall_at_k(comp_embeddings, tar_embeddings, target_ids, 10)
+        avg = (r1 + r5 + r10) / 3
+
+        keys = ["R@1", "R@5", "R@10", "Avg_Recall"]
+        values = [r1, r5, r10, avg]
+
+        return dict(zip(keys, [comp_embeddings.new_tensor(v) for v in values]))

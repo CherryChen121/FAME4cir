@@ -9,7 +9,11 @@ from mmf.utils.configuration import get_mmf_cache_dir
 from mmf.utils.distributed import is_main, synchronize
 from mmf.utils.file_io import PathManager
 from mmf.utils.general import get_absolute_path
-from torchtext import vocab
+
+try:
+    from torchtext import vocab
+except (ImportError, OSError):
+    vocab = None
 
 
 EMBEDDING_NAME_CLASS_MAPPING = {"glove": "GloVe", "fasttext": "FastText"}

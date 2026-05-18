@@ -136,7 +136,7 @@ class CLIPCrossAttention(nn.Module):
 
 
 class CLIPEncoderLayerWithAdapter(nn.Module):
-    def __init__(self, config: CLIPConfig, adapter_config: CLIPAdapterConfig = None):
+    def __init__(self, config: CLIPConfig, adapter_config: CLIPAdapterConfig = None, cross_attn_ctx_dim: int = None):
         super().__init__()
         self.embed_dim = config.hidden_size
         self.self_attn = CLIPAttention(config)
@@ -190,8 +190,11 @@ class CLIPEncoderLayerWithAdapter(nn.Module):
                         self.adapter_config.dropout,
                     )
             if self.adapter_config.enable_xattn:
-                # FIXME: monkey patching
-                if config.hidden_size == 512:
+                # cross_attn_ctx_dim is passed from parent encoder
+                if cross_attn_ctx_dim is not None:
+                    self.cross_attn = CLIPCrossAttention(config, cross_attn_ctx_dim)
+                # Fallback for backward compatibility (ViT-B only)
+                elif config.hidden_size == 512:
                     self.cross_attn = CLIPCrossAttention(config, 768)
                 elif (
                     config.hidden_size == 768
@@ -300,12 +303,12 @@ class CLIPEncoderLayerWithAdapter(nn.Module):
 
 
 class CLIPEncoderWithAdapter(_CLIPEncoder):
-    def __init__(self, config: CLIPConfig, adapter_config: CLIPAdapterConfig = None):
+    def __init__(self, config: CLIPConfig, adapter_config: CLIPAdapterConfig = None, cross_attn_ctx_dim: int = None):
         super().__init__(config)
         self.config = config
         self.layers = nn.ModuleList(
             [
-                CLIPEncoderLayerWithAdapter(config, adapter_config)
+                CLIPEncoderLayerWithAdapter(config, adapter_config, cross_attn_ctx_dim=cross_attn_ctx_dim)
                 for _ in range(config.num_hidden_layers)
             ]
         )
@@ -335,13 +338,17 @@ class CLIPEncoderWithAdapter(_CLIPEncoder):
 
 class CLIPTextTransformerWithAdapter(_CLIPTextTransformer):
     def __init__(
-        self, config: CLIPTextConfig, adapter_config: CLIPAdapterConfig = None
+        self, config: CLIPTextConfig, adapter_config: CLIPAdapterConfig = None,
+        vision_hidden_size: int = None
     ):
         super().__init__(config)
         self.config = config
         embed_dim = config.hidden_size
         self.embeddings = CLIPTextEmbeddings(config)
-        self.encoder = CLIPEncoderWithAdapter(config, adapter_config)
+        self.encoder = CLIPEncoderWithAdapter(
+            config, adapter_config,
+            cross_attn_ctx_dim=vision_hidden_size
+        )
         self.final_layer_norm = nn.LayerNorm(embed_dim)
 
         if adapter_config is not None:
@@ -361,7 +368,8 @@ class CLIPTextTransformerWithAdapter(_CLIPTextTransformer):
 
 class CLIPVisionTransformerWithAdapter(_CLIPVisionTransformer):
     def __init__(
-        self, config: CLIPVisionConfig, adapter_config: CLIPAdapterConfig = None
+        self, config: CLIPVisionConfig, adapter_config: CLIPAdapterConfig = None,
+        text_hidden_size: int = None
     ):
         super().__init__(config)
         self.config = config
@@ -369,7 +377,10 @@ class CLIPVisionTransformerWithAdapter(_CLIPVisionTransformer):
         self.embeddings = CLIPVisionEmbeddings(config)
         # Typo of huggingface
         self.pre_layrnorm = nn.LayerNorm(embed_dim)
-        self.encoder = CLIPEncoderWithAdapter(config, adapter_config)
+        self.encoder = CLIPEncoderWithAdapter(
+            config, adapter_config,
+            cross_attn_ctx_dim=text_hidden_size
+        )
         self.post_layernorm = nn.LayerNorm(embed_dim)
 
         if adapter_config is not None:
@@ -406,9 +417,11 @@ class CLIPModelWithAdapter(_CLIPModel):
         self.text_embed_dim = text_config.hidden_size
         self.vision_embed_dim = vision_config.hidden_size
 
-        self.text_model = CLIPTextTransformerWithAdapter(text_config, adapter_config)
+        self.text_model = CLIPTextTransformerWithAdapter(
+            text_config, adapter_config, vision_hidden_size=vision_config.hidden_size
+        )
         self.vision_model = CLIPVisionTransformerWithAdapter(
-            vision_config, adapter_config
+            vision_config, adapter_config, text_hidden_size=text_config.hidden_size
         )
 
         self.visual_projection = nn.Linear(

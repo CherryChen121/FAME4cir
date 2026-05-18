@@ -186,7 +186,10 @@ def setup_imports():
             file_name = splits[-1]
             module_name = file_name[: file_name.find(".py")]
             module = ".".join(["mmf"] + splits[import_prefix_index:-1] + [module_name])
-            importlib.import_module(module)
+            try:
+                importlib.import_module(module)
+            except (ImportError, ModuleNotFoundError) as e:
+                logging.debug(f"Skipping import of {module}: {e}")
 
     registry.register("imports_setup", True)
 
