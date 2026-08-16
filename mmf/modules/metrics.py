@@ -2167,3 +2167,94 @@ class RecallAtK_idrid(BaseMetric):
         values = [r1, r5, r10, avg]
 
         return dict(zip(keys, [comp_embeddings.new_tensor(v) for v in values]))
+
+
+@registry.register_metric("r@k_combined_fundus")
+class RecallAtKCombinedFundus(BaseMetric):
+    """Recall for fundus CIR queries ranked against the full split gallery."""
+
+    def __init__(self, name="recall@k_combined_fundus"):
+        super().__init__(name)
+        self.required_params = [
+            "comp_feats",
+            "tar_feats",
+            "target_id",
+            "fake_data",
+        ]
+
+    def _get_recall_at_k(
+        self,
+        comp_embeddings: Tensor,
+        tar_embeddings: Tensor,
+        target_ids: Tensor,
+        fake_data: Tensor,
+        k: int,
+    ) -> Tensor:
+        query_embeddings = F.normalize(
+            comp_embeddings[~fake_data].float(), dim=-1
+        )
+        query_target_ids = target_ids[~fake_data]
+        if query_embeddings.size(0) == 0:
+            raise RuntimeError("No real queries are available for evaluation")
+
+        _, unique_idx = np.unique(
+            target_ids.detach().cpu().numpy(), return_index=True
+        )
+        unique_idx = torch.as_tensor(
+            unique_idx, dtype=torch.long, device=tar_embeddings.device
+        )
+        gallery_embeddings = F.normalize(
+            tar_embeddings[unique_idx].float(), dim=-1
+        )
+        gallery_ids = target_ids[unique_idx]
+
+        effective_k = min(k, gallery_embeddings.size(0))
+        topk_indices = torch.topk(
+            query_embeddings @ gallery_embeddings.t(),
+            k=effective_k,
+            dim=1,
+            largest=True,
+            sorted=False,
+        ).indices
+        retrieved_ids = gallery_ids[topk_indices]
+        return retrieved_ids.eq(query_target_ids.view(-1, 1)).any(dim=1).float().mean()
+
+    def calculate(
+        self,
+        sample_list: Dict[str, Tensor],
+        model_output: Dict[str, Tensor],
+        *args,
+        **kwargs,
+    ):
+        comp_embeddings = torch.cat(
+            all_gather_diff_size(model_output["comp_feats"]), dim=0
+        )
+        tar_embeddings = torch.cat(
+            all_gather_diff_size(model_output["tar_feats"]), dim=0
+        )
+        target_ids = torch.cat(
+            all_gather_diff_size(sample_list["target_id"]), dim=0
+        )
+        fake_data = torch.cat(
+            all_gather_diff_size(sample_list["fake_data"]), dim=0
+        ).bool()
+
+        r1 = self._get_recall_at_k(
+            comp_embeddings, tar_embeddings, target_ids, fake_data, 1
+        )
+        r5 = self._get_recall_at_k(
+            comp_embeddings, tar_embeddings, target_ids, fake_data, 5
+        )
+        r10 = self._get_recall_at_k(
+            comp_embeddings, tar_embeddings, target_ids, fake_data, 10
+        )
+        r50 = self._get_recall_at_k(
+            comp_embeddings, tar_embeddings, target_ids, fake_data, 50
+        )
+        return {
+            "R@1": r1 * 100,
+            "R@5": r5 * 100,
+            "R@10": r10 * 100,
+            "R@50": r50 * 100,
+            "Avg_Recall": (r1 + r5 + r10) * (100 / 3),
+        }

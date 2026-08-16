@@ -375,7 +375,11 @@ class FashionCLIPForMTL(FashionCLIPBaseModel):
     def _forward(self, sample_list: Dict[str, Tensor]) -> Dict[str, Tensor]:
         if sample_list.dataset_name == "fashiongen":
             output_dict = self._forward_itc(sample_list)
-        elif sample_list.dataset_name in ("fashioniq", "idrid"):
+        elif sample_list.dataset_name in (
+            "fashioniq",
+            "idrid",
+            "combined_fundus",
+        ):
             output_dict = self._forward_tgir(sample_list)
         elif sample_list.dataset_name == "fashiongen_cls":
             output_dict = self._forward_scr(sample_list)
