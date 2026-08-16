@@ -27,3 +27,53 @@ checkpoint.resume_file=save/backup_ckpts/fashionclip_512.pth \
 run_type=test \
 model_config.fashionclip.adapter_config.bottleneck=512
 ```
+
+## Combined Fundus CIR
+
+The repository also supports the FashionIQ-style dataset at
+`/data0/qrchen/datasets/Combined_Fundus_CIR_Dataset`.
+
+- Training and validation use `Internal.train` and `Internal.val`.
+- Testing can use `Internal.test`, `GRAPE.test`, or `ODIR5K.test`.
+- Evaluation ranks every query against the complete gallery from
+  `image_splits/split.<subset>.<split>.json`.
+
+Run from the repository root:
+
+```bash
+# CLIP ViT-B/16 (batch size 32)
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh train_combined
+
+# CLIP ViT-L/14 (batch size 16)
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh train_combined_L
+```
+
+After training, evaluate the three test sets with the matching backbone:
+
+```bash
+# CLIP ViT-B/16
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh test_combined_internal
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh test_combined_grape
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh test_combined_odir
+
+# CLIP ViT-L/14
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh test_combined_internal_L
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh test_combined_grape_L
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh test_combined_odir_L
+```
+
+The ViT-B/16 test commands use
+`save/fashionclip_combined_fundus_composition_xattn/fashionclip_final.pth`
+by default. The ViT-L/14 commands use
+`save/fashionclip_combined_fundus_vitL14_composition_xattn/fashionclip_final.pth`.
+To evaluate another checkpoint:
+
+```bash
+# CLIP ViT-B/16
+FAME_CHECKPOINT=/absolute/path/to/fashionclip_final.pth \
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh test_combined_grape
+
+# CLIP ViT-L/14
+FAME_L_CHECKPOINT=/absolute/path/to/fashionclip_final.pth \
+CUDA_VISIBLE_DEVICES=3 bash 命令.sh test_combined_grape_L
+```
